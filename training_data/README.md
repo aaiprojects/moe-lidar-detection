@@ -6,7 +6,7 @@ The router training CSVs are too large to store in this repository (GitHub's fil
 
 Download the dataset from Google Drive:
 
-**[Google Drive link — add URL here]**
+**https://drive.google.com/drive/folders/1uSW8jr36o29bpaMzKMNZJnsiyn_MT_CZ?usp=drive_link**
 
 After downloading, place the files in `router_data/`:
 
