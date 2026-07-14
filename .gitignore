@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Large training data (exceeds GitHub 100 MB limit; keep locally or use Git LFS)
+training_data/router_data/*.csv
+data/router_data/*.csv
