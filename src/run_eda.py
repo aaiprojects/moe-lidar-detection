@@ -3,7 +3,7 @@ Execute all data cleaning and EDA steps from data_cleaning_eda.ipynb
 and save figures to docs/figures/.
 
 Run from the repo root:
-    python notebooks/run_eda.py
+    python src/run_eda.py
 """
 import pathlib
 import warnings
@@ -20,15 +20,20 @@ warnings.filterwarnings("ignore")
 plt.rcParams.update({"figure.dpi": 120, "font.size": 10})
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-ROOT      = pathlib.Path(__file__).resolve().parent
-TRAIN_CSV = ROOT / "data" / "router_data" / "train.csv"
-EVAL_CSV  = ROOT / "data" / "router_data" / "eval.csv"
+ROOT      = pathlib.Path(__file__).resolve().parent.parent  # repo root (this file lives in src/)
+TRAIN_CSV = ROOT / "training_data" / "router_data" / "train.csv"
+EVAL_CSV  = ROOT / "training_data" / "router_data" / "eval.csv"
 FIG_DIR   = ROOT / "docs" / "figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
+# Order matches the class_id encoding used when the dataset was built
+# (src.moe.features._CLASS_TO_ID / nuscenes_infos_val.pkl metainfo order) --
+# NOT alphabetical or nuScenes' benchmark-table order. Using the wrong order
+# here silently mislabels every class-indexed plot (e.g. attributing
+# bicycle's rows to barrier).
 CLASS_NAMES = [
-    "car", "truck", "construction_vehicle", "bus", "trailer",
-    "barrier", "motorcycle", "bicycle", "pedestrian", "traffic_cone",
+    "car", "truck", "trailer", "bus", "construction_vehicle",
+    "bicycle", "motorcycle", "pedestrian", "traffic_cone", "barrier",
 ]
 
 # ── Load data ─────────────────────────────────────────────────────────────────
@@ -108,7 +113,8 @@ print(f"  Train: {len(df_tr):,}  |  Eval: {len(df_ev):,}")
 FEATURE_COLS = [
     "detection_score", "dist_from_ego", "box_width", "box_length", "box_height",
     "vel_magnitude", "n_peer_overlaps", "max_peer_iou", "mean_peer_score",
-    "score_variance", "expert_agreement", "max_class_score", "n_active_experts",
+    "score_variance", "expert_agreement", "n_spatial_overlaps", "class_agreement",
+    "max_class_score", "n_active_experts", "dist_to_drivable_area",
     "class_id", "expert_id", "label",
 ]
 
@@ -176,14 +182,17 @@ print("  Saved fig3_score_distribution.png")
 
 # ── Figure 4: key feature distributions ──────────────────────────────────────
 FEAT_LABELS = {
-    "detection_score"  : "Expert confidence score",
-    "max_peer_iou"     : "Max overlap with peer (IoU)",
-    "n_peer_overlaps"  : "Number of peer overlaps",
-    "expert_agreement" : "Fraction of experts agreeing",
-    "dist_from_ego"    : "Distance from ego (m)",
+    "detection_score"       : "Expert confidence score",
+    "max_peer_iou"          : "Max overlap with peer (IoU)",
+    "n_peer_overlaps"       : "Number of peer overlaps",
+    "expert_agreement"      : "Fraction of experts agreeing",
+    "dist_from_ego"         : "Distance from ego (m)",
+    "n_spatial_overlaps"    : "Number of spatial overlaps (any class)",
+    "class_agreement"       : "Fraction of overlaps agreeing on class",
+    "dist_to_drivable_area" : "Distance to drivable area (m)",
 }
-fig, axes = plt.subplots(1, 5, figsize=(18, 3.5))
-for ax, (col, lbl) in zip(axes, FEAT_LABELS.items()):
+fig, axes = plt.subplots(2, 4, figsize=(18, 7))
+for ax, (col, lbl) in zip(axes.flat, FEAT_LABELS.items()):
     for label, color, name in [(0, "tomato", "FP"), (1, "steelblue", "TP")]:
         vals = df_tr[df_tr["label"] == label][col].clip(
             df_tr[col].quantile(0.01), df_tr[col].quantile(0.99))
