@@ -1,0 +1,161 @@
+# Final, adopted MoE configuration.
+#
+# Result on the 45 held-out test scenes (1,804 keyframes), never used during
+# router training or hyperparameter calibration: mAP=0.6179, NDS=0.6761.
+# (Supersedes the original project's mAP=0.6152/NDS=0.6694: this repo's
+# routers were retrained with early stopping + regularization, a class-order
+# bug in nn_router.py was fixed, and the zero-importance class_id feature
+# was dropped from the model input -- each confirmed via this same held-out
+# set before being adopted. See notebook/model_training_evaluation.ipynb.)
+#
+# Also fixed: interpolate_missed_frames (src/fusion/tracker.py) could
+# synthesize a box that duplicated one a different, fragmented track
+# already placed in the same frame (most visible for barrier -- long, thin,
+# static objects a greedy tracker can lose the thread on). Confirmed via
+# visual inspection (docs/figures/inference_examples/) that this was
+# systemic, not a one-off: 508 duplicate candidates caught across the 45
+# test scenes. mAP/NDS unaffected (a ranking metric doesn't penalize a
+# redundant box much either way) but it's a genuine output-quality fix.
+#
+# This file is the single source of truth for every numeric constant used by
+# src/moe/pipeline.py. It captures the outcome of an experiment log spanning
+# 50+ ablations (see docs/expert_regeneration.md for a summary and pointers);
+# nothing here should be hand-edited without re-running evaluation.
+
+classes:
+  - car
+  - truck
+  - construction_vehicle
+  - bus
+  - trailer
+  - barrier
+  - motorcycle
+  - bicycle
+  - pedestrian
+  - traffic_cone
+
+# Ground-truth matching criterion used when building the router training
+# dataset. Six classes with large, regular footprints use BEV IoU; four
+# classes whose narrow/small footprints make IoU overly punishing use
+# nuScenes' own center-distance criterion instead.
+matching:
+  iou_label_classes: [car, truck, bus, trailer, barrier, traffic_cone]
+  distance_label_classes: [motorcycle, bicycle, pedestrian, construction_vehicle]
+  iou_threshold: 0.5
+  distance_threshold_m: 2.0
+
+# XGBoost per-class router hyperparameters (identical across all 10 classes
+# except n_estimators, which is chosen per class -- see below).
+xgboost:
+  learning_rate: 0.05
+  max_depth: 6
+  # Row/feature subsampling + L2 regularization -- added after a train-vs-eval
+  # AP comparison (notebook/model_training_evaluation.ipynb Step 5) showed the
+  # original unregularized recipe overfitting most classes to some degree.
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_lambda: 2.0
+  tree_method: hist
+  seed: 42
+  # n_estimators is NOT fixed -- each class picks its own via early stopping
+  # directly against eval.csv (the calibration split), capped at
+  # max_n_estimators and stopped after early_stopping_rounds with no AUCPR
+  # improvement, then refit on the full training partition at that round
+  # count. See src/moe/xgboost_router.py's module docstring for why an
+  # internal, training-only probe split was tried first and rejected (it
+  # can't detect the real train/calibration scene-distribution shift, so it
+  # picked far too many rounds and made overfitting worse, not better).
+  max_n_estimators: 500
+  early_stopping_rounds: 40
+  fallback_n_estimators: 150  # used only if a class has no eval positives
+  # Bicycle has the most extreme class imbalance (2.2% positive) and is the
+  # only class where scale_pos_weight's probability-scale distortion was
+  # large enough to require correcting via CalibratedClassifierCV(sigmoid).
+  calibrated_classes: [bicycle]
+  calibration:
+    method: sigmoid
+    cv_folds: 3
+
+# FT-Transformer per-class router hyperparameters.
+ft_transformer:
+  n_features: 16  # excludes class_id (zero-importance, XGBoost too) and dist_to_drivable_area (XGBoost-only feature)
+  d_token: 64
+  n_heads: 4
+  n_layers: 3
+  dropout: 0.1
+  d_ffn_factor: 4
+  epochs: 30  # upper bound -- early stopping (below) usually stops sooner
+  batch_size: 4096
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  # Validation loss on the same held-out 10% slice used for isotonic
+  # calibration also drives early stopping: the best-val-loss epoch's
+  # weights are checkpointed and restored after training, rather than
+  # using the final epoch's weights. Added for the same reason as
+  # XGBoost's early stopping above -- low-count classes were overfitting
+  # well before epoch 30.
+  early_stopping_patience: 5
+  calibration: isotonic  # fit on a held-out 10% split of its own training data
+
+# Per-class convex blend weight: combined = lambda * p_xgboost + (1 - lambda) * p_ft_transformer
+ensemble_lambda:
+  car: 0.9
+  truck: 0.8
+  construction_vehicle: 0.8
+  bus: 0.9
+  trailer: 0.9
+  barrier: 0.974
+  motorcycle: 0.8
+  bicycle: 0.8
+  pedestrian: 0.3
+  traffic_cone: 0.9
+
+ensemble:
+  class_aware: true
+  iou_threshold: 0.3
+  score_threshold: 0.1  # fallback; every class below has its own threshold
+  max_boxes_per_sample: 500  # global cap after per-class NMS; never binds (max observed: 146)
+  per_class_score_thresholds:
+    car: 0.488
+    truck: 0.365
+    construction_vehicle: 0.079
+    bus: 0.33
+    trailer: 0.232
+    barrier: 0.315
+    motorcycle: 0.187
+    bicycle: 0.217
+    pedestrian: 0.296
+    traffic_cone: 0.163
+
+# Soft-temperature gate blending the combined router score with the
+# originating expert's own raw detection confidence:
+#   gate = 1 / (1 + tau);  blended = detection_score * (1 - gate) + combined_score * gate
+router:
+  global_tau: 1.0
+  class_tau:
+    car: 0.8
+    truck: 1.0
+    construction_vehicle: 1.2
+    bus: 1.0
+    trailer: 1.2
+    barrier: 1.0
+    motorcycle: 1.0
+    bicycle: 1.0
+    pedestrian: 0.8
+    traffic_cone: 1.2
+
+# Temporal refinement (src/fusion/tracker.py). Applied to every class except
+# car and bicycle, where both corrections were found to be net-neutral or
+# harmful during optimization.
+tracking:
+  orphan_penalty: 0.7
+  interpolation_discount: 0.9
+  excluded_classes: [car, bicycle]
+
+# Scene-grouped 3-way split of the 6,019 nuScenes val keyframes (150 scenes).
+# Splitting at the scene level (not the keyframe level) prevents temporally
+# adjacent frames from leaking across partitions.
+split:
+  train_scenes: 85    # 3,411 keyframes — router training
+  calibration_scenes: 20  # 804 keyframes — threshold/lambda/tau calibration
+  test_scenes: 45     # 1,804 keyframes — held out, evaluated once

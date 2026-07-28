@@ -1,0 +1,21 @@
+# Core
+numpy>=1.26
+pandas>=2.0
+pyyaml>=6.0
+tqdm>=4.66
+
+# Router training / inference
+scikit-learn>=1.4
+xgboost>=2.0
+torch>=2.2
+
+# nuScenes evaluation + scene/map metadata (needed for scene-grouped
+# splitting, the official mAP/NDS evaluator, and drivable-area map masks)
+nuscenes-devkit>=1.1.10
+
+# EDA notebook (notebook/data_cleaning_eda.ipynb, src/run_eda.py)
+matplotlib>=3.8
+seaborn>=0.13
+
+# Testing
+pytest>=8.0
