@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import gc
 import json
 from pathlib import Path
+from typing import AbstractSet
 
 from src.io.schemas import DetectionBox
 from src.utils.logging_utils import get_logger
@@ -26,6 +28,7 @@ def load_nuscenes_predictions(
     model_name: str,
     frame: str = "global",
     score_threshold: float = 0.0,
+    sample_tokens: AbstractSet[str] | list[str] | None = None,
 ) -> dict[str, list[DetectionBox]]:
     """Load a nuScenes submission JSON and return boxes keyed by sample token.
 
@@ -34,6 +37,9 @@ def load_nuscenes_predictions(
         model_name: Identifier for this expert (used in DetectionBox.model_name).
         frame: Coordinate frame the predictions are in ('global', 'lidar', 'ego').
         score_threshold: Discard boxes with score strictly below this value.
+        sample_tokens: If set, keep only these sample tokens. Strongly recommended
+            when running on a subset of keyframes — each full val JSON is hundreds
+            of MB on disk and several GB once parsed into Python objects.
 
     Returns:
         Dict mapping sample_token → list of DetectionBox.
@@ -47,7 +53,16 @@ def load_nuscenes_predictions(
             f"Prediction file not found for model '{model_name}': {path}"
         )
 
-    log.info("Loading predictions from %s (model=%s)", path, model_name)
+    token_filter: set[str] | None = None
+    if sample_tokens is not None:
+        token_filter = set(sample_tokens)
+
+    log.info(
+        "Loading predictions from %s (model=%s%s)",
+        path,
+        model_name,
+        f", {len(token_filter)} tokens" if token_filter else ", all tokens",
+    )
     with path.open() as f:
         data = json.load(f)
 
@@ -57,11 +72,17 @@ def load_nuscenes_predictions(
             "Expected standard nuScenes submission format."
         )
 
+    raw_results = data["results"]
+    del data
+    gc.collect()
+
     results: dict[str, list[DetectionBox]] = {}
     total_loaded = 0
     total_skipped = 0
 
-    for sample_token, raw_boxes in data["results"].items():
+    for sample_token, raw_boxes in raw_results.items():
+        if token_filter is not None and sample_token not in token_filter:
+            continue
         if not sample_token:
             raise ValueError("Encountered empty sample_token in prediction file.")
 
@@ -95,6 +116,9 @@ def load_nuscenes_predictions(
             total_loaded += 1
 
         results[sample_token] = boxes
+
+    del raw_results
+    gc.collect()
 
     log.info(
         "Loaded %d boxes across %d samples (skipped %d below score threshold)",
