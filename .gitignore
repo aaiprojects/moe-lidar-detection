@@ -220,3 +220,9 @@ __marimo__/
 # Large training data (exceeds GitHub 100 MB limit; keep locally or use Git LFS)
 training_data/router_data/*.csv
 data/router_data/*.csv
+
+# Hardware sampling log (scripts/hw_monitor.py) — machine-local diagnostics
+outputs/hw_monitor.csv
+
+# Local backup of the batch-4096 router weights (see chat 2026-08-02)
+model_weights/_backup_4096/
