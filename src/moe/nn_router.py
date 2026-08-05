@@ -33,6 +33,7 @@ Reference:
 from __future__ import annotations
 
 import copy
+import gc
 import json
 import pickle
 from pathlib import Path
@@ -67,7 +68,23 @@ NUSCENES_CLASSES: list[str] = [
 
 _CLS_TO_ID: dict[str, int] = {c: i for i, c in enumerate(NUSCENES_CLASSES)}
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def get_device() -> torch.device:
+    """Resolve the active torch device at call time (not import time)."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def resolve_device(device: str | torch.device | None) -> torch.device:
+    """Resolve an explicit device preference ('cpu', 'cuda', or None -> auto)."""
+    if device is None:
+        return get_device()
+    return torch.device(device)
+
+
+# Backwards-compatible alias; prefer get_device() in new code.
+DEVICE = get_device()
+
+DEFAULT_INFERENCE_BATCH_SIZE = 8192
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -228,8 +245,15 @@ class NNRouterWrapper:
         model: nn.Module,
         scaler: StandardScaler,
         calibrator=None,
+        inference_device: str | torch.device = "cpu",
+        predict_batch_size: int = DEFAULT_INFERENCE_BATCH_SIZE,
     ) -> None:
-        self.model      = model.to(DEVICE).eval()
+        # Keep routers on CPU after training — per-frame inference batches are
+        # tiny and GPU residency of 10 class models adds up on unified-memory
+        # systems (e.g. GB10) where GPU pressure can reboot the machine.
+        self.inference_device = resolve_device(inference_device)
+        self.predict_batch_size = predict_batch_size
+        self.model      = model.to(self.inference_device).eval()
         self.scaler     = scaler
         self.calibrator = calibrator   # IsotonicRegression or None
 
@@ -240,16 +264,32 @@ class NNRouterWrapper:
         Compatible with sklearn's predict_proba convention so that
         ``predict_proba(X)[:, 1]`` gives the true-positive probability.
         """
+        device = self.inference_device
+        self.model.to(device)
         X_scaled = self.scaler.transform(X).astype(np.float32)
-        tensor   = torch.from_numpy(X_scaled).to(DEVICE)
-        logits   = self.model(tensor).squeeze(-1)          # [N]
-        p_pos    = torch.sigmoid(logits).cpu().numpy()     # [N]
+        n = len(X_scaled)
+        p_pos = np.empty(n, dtype=np.float64)
+
+        for start in range(0, n, self.predict_batch_size):
+            end = min(start + self.predict_batch_size, n)
+            tensor = torch.from_numpy(X_scaled[start:end]).to(device)
+            logits = self.model(tensor).squeeze(-1)
+            p_pos[start:end] = torch.sigmoid(logits).cpu().numpy()
+
         if self.calibrator is not None:
             p_pos = self.calibrator.predict(p_pos)
         return np.column_stack([1.0 - p_pos, p_pos])
 
     def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
         return (self.predict_proba(X)[:, 1] >= threshold).astype(int)
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore pickles written before inference_device/predict_batch_size existed."""
+        state.setdefault("inference_device", torch.device("cpu"))
+        state.setdefault("predict_batch_size", DEFAULT_INFERENCE_BATCH_SIZE)
+        state["inference_device"] = resolve_device(state["inference_device"])
+        self.__dict__.update(state)
+        self.model = self.model.to(self.inference_device).eval()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -268,6 +308,9 @@ def train_nn_per_class_routers(
     seed: int = 42,
     feature_names: list[str] | None = None,
     patience: int = 5,
+    use_gpu: bool = True,
+    inference_device: str = "cpu",
+    predict_batch_size: int = DEFAULT_INFERENCE_BATCH_SIZE,
 ) -> dict[str, NNRouterWrapper | None]:
     """Train one neural-network router per nuScenes detection class.
 
@@ -294,6 +337,10 @@ def train_nn_per_class_routers(
         seed: Random seed for reproducibility.
         feature_names: Feature columns to use (defaults to FEATURE_NAMES).
         patience: Epochs of no validation-loss improvement before stopping.
+        use_gpu: Train on CUDA when available; set False to reduce memory pressure
+            on unified-memory GPUs (GB10 / DGX Spark).
+        inference_device: Device stored models use at predict time (default CPU).
+        predict_batch_size: Chunk size for predict_proba to cap GPU spikes.
 
     Returns:
         Dict mapping class_name → NNRouterWrapper (or None if skipped).
@@ -307,10 +354,11 @@ def train_nn_per_class_routers(
 
     routers: dict[str, NNRouterWrapper | None] = {}
     n_features = len(feature_names)
+    train_device = resolve_device("cuda" if (use_gpu and torch.cuda.is_available()) else "cpu")
 
     log.info(
         "Training %s router per class on %s | features=%d | epochs=%d | batch=%d",
-        model_type.upper(), DEVICE, n_features, epochs, batch_size,
+        model_type.upper(), train_device, n_features, epochs, batch_size,
     )
 
     for cls in NUSCENES_CLASSES:
@@ -352,14 +400,15 @@ def train_nn_per_class_routers(
 
         # ── pos_weight to counteract class imbalance ──────────────────────────
         n_neg      = n_total - n_pos
-        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], device=DEVICE)
+        device = train_device
+        pos_weight = torch.tensor([n_neg / max(n_pos, 1)], device=device)
 
         # ── Build model ───────────────────────────────────────────────────────
         if model_type == "mlp":
             model: nn.Module = MLPRouter(n_features=n_features)
         else:
             model = FTTransformerRouter(n_features=n_features)
-        model = model.to(DEVICE)
+        model = model.to(device)
 
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
         optimiser = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -378,8 +427,8 @@ def train_nn_per_class_routers(
         # Validation loss (on the held-out calibration slice) drives both the
         # LR scheduler and early stopping -- training loss alone can't detect
         # overfitting since it keeps improving even as generalization worsens.
-        X_cal_t = torch.from_numpy(X_cal).to(DEVICE)
-        y_cal_t = torch.from_numpy(y_cal).unsqueeze(1).to(DEVICE)
+        X_cal_t = torch.from_numpy(X_cal).to(device)
+        y_cal_t = torch.from_numpy(y_cal).unsqueeze(1).to(device)
 
         best_val_loss = float("inf")
         best_state: dict | None = None
@@ -391,7 +440,7 @@ def train_nn_per_class_routers(
             model.train()
             epoch_loss = 0.0
             for xb, yb in dataloader:
-                xb, yb = xb.to(DEVICE), yb.to(DEVICE)
+                xb, yb = xb.to(device), yb.to(device)
                 optimiser.zero_grad()
                 logits = model(xb)
                 loss   = criterion(logits, yb)
@@ -448,7 +497,18 @@ def train_nn_per_class_routers(
             len(y_cal), 100.0 * y_cal.mean(),
         )
 
-        wrapper = NNRouterWrapper(model, scaler, calibrator)
+        wrapper = NNRouterWrapper(
+            model.cpu(),
+            scaler,
+            calibrator,
+            inference_device=inference_device,
+            predict_batch_size=predict_batch_size,
+        )
+
+        if train_device.type == "cuda":
+            del X_cal_t, y_cal_t, model
+            gc.collect()
+            torch.cuda.empty_cache()
 
         # ── Validation metrics ────────────────────────────────────────────────
         if val_df is not None:
@@ -504,3 +564,36 @@ def save_nn_per_class_routers(
         json.dumps(meta_out, indent=2)
     )
     log.info("Saved NN per-class routers for %d classes → %s", len(saved), output_dir)
+
+
+def load_nn_per_class_routers(
+    input_dir: Path,
+    inference_device: str = "cpu",
+) -> dict[str, NNRouterWrapper | None]:
+    """Load per-class NN routers saved by save_nn_per_class_routers.
+
+    Mirrors load_xgboost_per_class_routers so Section 7 of the notebook can run
+    in a fresh kernel without re-training. Classes with no saved file map to
+    None, matching the training function's contract.
+
+    Weights written before routers were moved to CPU at save time contain CUDA
+    tensors and cannot be unpickled on a CPU-only host; retrain to regenerate
+    them if that happens.
+    """
+    input_dir = Path(input_dir)
+    routers: dict[str, NNRouterWrapper | None] = {}
+
+    for cls in NUSCENES_CLASSES:
+        path = input_dir / f"router_{cls}.pkl"
+        if not path.exists():
+            routers[cls] = None
+            continue
+        with path.open("rb") as f:
+            wrapper = pickle.load(f)
+        wrapper.inference_device = resolve_device(inference_device)
+        wrapper.model = wrapper.model.to(wrapper.inference_device).eval()
+        routers[cls] = wrapper
+
+    n = sum(r is not None for r in routers.values())
+    log.info("Loaded NN per-class routers for %d classes ← %s", n, input_dir)
+    return routers
