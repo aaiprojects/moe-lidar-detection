@@ -226,3 +226,24 @@ outputs/hw_monitor.csv
 
 # Local backup of the batch-4096 router weights (see chat 2026-08-02)
 model_weights/_backup_4096/
+
+# Expert prediction JSONs (~1.6 GB total; Drive-hosted, see predictions/README.md)
+predictions/*/predictions.json
+predictions/*/predictions_global.json
+predictions/*/raw/
+predictions/*/results/
+
+# Trained router weights (Drive-hosted, see model_weights/README.md)
+model_weights/router_xgboost/*.pkl
+model_weights/router_nn/*.pkl
+model_weights/router_nn/*.json
+
+# nuScenes dataset / checkpoints (see docs/expert_regeneration.md)
+data/
+
+# Pipeline run artifacts (submission JSONs, metrics, hardware logs)
+outputs/
+outputs_eval/
+
+# Report working copies
+docs/*.BACKUP.docx
