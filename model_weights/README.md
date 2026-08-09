@@ -14,7 +14,7 @@ even though these particular files are individually small).
 
 Download from Google Drive:
 
-**\<ADD_GOOGLE_DRIVE_LINK_HERE\>**
+**\<https://drive.google.com/drive/folders/1jxE-sz2fj0nd_DuxEGkAwJyUVLRUadgY?usp=sharing>**
 
 After downloading, place the files at:
 
