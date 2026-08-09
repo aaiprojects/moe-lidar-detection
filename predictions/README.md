@@ -13,7 +13,7 @@ per file, and even individually most of these exceed it).
 
 Download from Google Drive:
 
-**[\<ADD_GOOGLE_DRIVE_LINK_HERE\>](https://drive.google.com/drive/folders/10OW2u6xL-iqs06J0pgwi-I0xhcNj3pLG?usp=sharing)**
+**([https://drive.google.com/drive/folders/10OW2u6xL-iqs06J0pgwi-I0xhcNj3pLG?usp=sharing](https://drive.google.com/drive/u/1/folders/10OW2u6xL-iqs06J0pgwi-I0xhcNj3pLG))**
 
 After downloading, place each expert's file at:
 
