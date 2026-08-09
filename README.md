@@ -258,3 +258,9 @@ Master of Science in Applied Artificial Intelligence, Shiley-Marcos School of En
 ## Acknowledgments
 
 The authors thank Professor Anna Marbut for instructional feedback on earlier drafts of this project.
+
+## License
+
+This repository's original source code is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+Third-party assets and dependencies are not covered by this repository's MIT License. The nuScenes dataset, MMDetection3D, pretrained detector checkpoints, model weights, and other external components remain subject to their respective licenses and terms of use.
