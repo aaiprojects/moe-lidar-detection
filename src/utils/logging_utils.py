@@ -14,6 +14,10 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """
     logger = logging.getLogger(name)
     if not logger.handlers:
+        # Guard against duplicate handlers: get_logger(__name__) may be
+        # called more than once for the same module (e.g. reimported in a
+        # notebook), and logging.getLogger() returns the same instance each
+        # time by name.
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(
             logging.Formatter(
@@ -23,5 +27,7 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
         )
         logger.addHandler(handler)
     logger.setLevel(level)
+    # Don't propagate to the root logger, otherwise messages would be
+    # emitted twice if the root logger also has a handler configured.
     logger.propagate = False
     return logger

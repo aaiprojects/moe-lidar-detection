@@ -14,6 +14,7 @@ def _yaw_quat(yaw: float) -> list[float]:
 
 
 def make_box(x: float, y: float, w: float = 2.0, length: float = 4.0, yaw: float = 0.0) -> DetectionBox:
+    """Build a minimal 'car' DetectionBox at (x, y) with the given size/yaw."""
     return DetectionBox(
         sample_token="tok",
         model_name="m",
@@ -29,17 +30,20 @@ def make_box(x: float, y: float, w: float = 2.0, length: float = 4.0, yaw: float
 
 
 def test_identical_boxes_iou_is_one():
+    """A box compared against itself has IoU exactly 1.0."""
     a = make_box(0.0, 0.0)
     assert math.isclose(bev_iou(a, a), 1.0, abs_tol=1e-9)
 
 
 def test_non_overlapping_iou_is_zero():
+    """Two boxes far enough apart to not overlap have IoU 0.0."""
     a = make_box(0.0, 0.0, w=2.0, length=2.0)   # occupies [-1,1] x [-1,1]
     b = make_box(10.0, 10.0, w=2.0, length=2.0)  # far away
     assert bev_iou(a, b) == 0.0
 
 
 def test_partial_overlap():
+    """A hand-computed partial overlap matches bev_iou's output exactly."""
     # Box a: centre (0,0), 2×2 → [-1,1]×[-1,1]
     # Box b: centre (1,0), 2×2 → [0,2]×[-1,1]
     # Overlap: [0,1]×[-1,1] = 1×2 = 2
@@ -51,12 +55,14 @@ def test_partial_overlap():
 
 
 def test_iou_is_symmetric():
+    """bev_iou(a, b) equals bev_iou(b, a)."""
     a = make_box(0.0, 0.0)
     b = make_box(1.0, 0.5)
     assert math.isclose(bev_iou(a, b), bev_iou(b, a), abs_tol=1e-12)
 
 
 def test_iou_in_range():
+    """IoU is always within the valid [0, 1] range."""
     a = make_box(0.0, 0.0)
     b = make_box(0.5, 0.5)
     val = bev_iou(a, b)
@@ -64,6 +70,7 @@ def test_iou_in_range():
 
 
 def test_matrix_shape():
+    """bev_iou_matrix returns an [len(boxes_a), len(boxes_b)] matrix."""
     boxes_a = [make_box(0.0, 0.0), make_box(5.0, 0.0)]
     boxes_b = [make_box(0.1, 0.0), make_box(10.0, 0.0), make_box(5.1, 0.0)]
     matrix = bev_iou_matrix(boxes_a, boxes_b)
@@ -72,6 +79,7 @@ def test_matrix_shape():
 
 
 def test_matrix_diagonal_high_for_near_identical():
+    """The vectorized matrix path agrees with bev_iou on near-identical boxes."""
     a = make_box(0.0, 0.0)
     b = make_box(0.0, 0.0)
     matrix = bev_iou_matrix([a], [b])

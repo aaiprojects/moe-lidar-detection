@@ -20,6 +20,9 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Fixed per-class colour palette so a class reads as the same colour across
+# every figure/panel in the project (predictions only; ground truth is
+# always drawn white/dashed, see draw_bev_box).
 CLASS_COLOURS: dict[str, str] = {
     "car": "#2196F3",
     "truck": "#FF9800",
@@ -38,6 +41,9 @@ def read_pcd_bin(path: Path) -> np.ndarray:
     """Read a nuScenes .pcd.bin file -> (N, 5) array [x, y, z, intensity, ring]."""
     pts = np.fromfile(path, dtype=np.float32)
     if pts.size % 5 != 0:
+        # Not evenly divisible into 5 columns: assume a 4-column dump
+        # (x, y, z, intensity, no ring channel) and pad a zero ring column
+        # so callers can always index a 5th column safely.
         pts = pts[: (pts.size // 4) * 4].reshape(-1, 4)
         pts = np.hstack([pts, np.zeros((pts.shape[0], 1), dtype=np.float32)])
     else:
@@ -56,6 +62,9 @@ def global_box_to_ego(box: dict, ego_pose: dict) -> dict:
     ego_t = np.array(ego_pose["translation"])
     ego_yaw = quat_to_yaw(ego_pose["rotation"])
 
+    # Inverse of the ego vehicle's global rotation: rotating by -ego_yaw
+    # undoes the ego pose's own heading, leaving box coordinates relative
+    # to the vehicle instead of the map.
     c, s = np.cos(-ego_yaw), np.sin(-ego_yaw)
     r_inv = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
@@ -66,11 +75,19 @@ def global_box_to_ego(box: dict, ego_pose: dict) -> dict:
 
     new_box = dict(box)
     new_box["translation"] = local_t.tolist()
+    # Re-encode the ego-relative yaw as a quaternion (qx=qy=0: rotation is
+    # about the vertical axis only, as with all nuScenes box rotations).
     new_box["rotation"] = [float(np.cos(local_yaw / 2)), 0.0, 0.0, float(np.sin(local_yaw / 2))]
     return new_box
 
 
 def bev_color_by_height(z: np.ndarray, z_min: float = -3.0, z_max: float = 5.0) -> np.ndarray:
+    """Map point heights to RGBA colours via the plasma colormap.
+
+    z_min/z_max approximate the ego-relative height range of a LiDAR sweep
+    (below-ground noise to overhead structures); values outside are clipped
+    to the palette's endpoints rather than extrapolated.
+    """
     z_norm = np.clip((z - z_min) / (z_max - z_min), 0.0, 1.0)
     return plt.cm.plasma(z_norm)
 
@@ -85,6 +102,9 @@ def draw_bev_box(ax: plt.Axes, box: dict, style: str = "solid", label_score: boo
     w, l, _ = box["size"]
     heading = quat_to_yaw(box.get("rotation", [1, 0, 0, 0]))
 
+    # Box corners in the box's own local frame (length along x, width along
+    # y, centered at the origin), then rotated by heading and translated to
+    # (tx, ty) to place them in the plot's coordinate frame.
     corners = np.array([[l / 2, w / 2], [-l / 2, w / 2], [-l / 2, -w / 2], [l / 2, -w / 2]])
     c, s = np.cos(heading), np.sin(heading)
     rot = np.array([[c, -s], [s, c]])
@@ -98,6 +118,8 @@ def draw_bev_box(ax: plt.Axes, box: dict, style: str = "solid", label_score: boo
     )
     ax.add_patch(poly)
 
+    # Short line from the box center to its front edge midpoint, so heading
+    # is visible at a glance without reading the rectangle's orientation.
     front = rot @ np.array([l / 2, 0]) + np.array([tx, ty])
     ax.plot([tx, front[0]], [ty, front[1]], color=colour, linewidth=0.8, alpha=0.7)
 
@@ -116,6 +138,13 @@ def _draw_panel(
     ylim: tuple[float, float],
     point_size: float = 0.5,
 ) -> None:
+    """Draw one BEV panel (dark background, height-coloured points, GT
+    boxes then prediction boxes on top) onto an existing Axes.
+
+    Shared by render_bev_frame (single panel) and
+    render_expert_comparison_grid (one panel per subplot) so every panel
+    is drawn identically regardless of how many are on the figure.
+    """
     ax.set_facecolor("#0b0b0b")
     colours = bev_color_by_height(points[:, 2])
     ax.scatter(points[:, 0], points[:, 1], s=point_size, c=colours, alpha=0.6)
@@ -135,6 +164,11 @@ def _draw_panel(
 
 
 def _legend_handles() -> list[mpatches.Patch]:
+    """Build the shared class-colour + ground-truth legend entries.
+
+    Outline-only patches (facecolor="none") mirror how boxes are actually
+    drawn in draw_bev_box, so the legend swatches match the plot.
+    """
     handles = [mpatches.Patch(edgecolor=c, facecolor="none", label=n) for n, c in CLASS_COLOURS.items()]
     handles.append(mpatches.Patch(edgecolor="white", facecolor="none", label="ground truth", linestyle="--"))
     return handles

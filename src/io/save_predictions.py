@@ -36,6 +36,9 @@ def save_nuscenes_predictions(
         results[token] = [b.to_nuscenes_dict() for b in boxes]
         total_boxes += len(boxes)
 
+    # The official nuScenes evaluator requires this "meta" block declaring
+    # which sensor modalities contributed to the submission, even though
+    # this project only ever produces LiDAR-only submissions.
     submission = {
         "meta": {
             "use_lidar": use_lidar,

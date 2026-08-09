@@ -89,7 +89,10 @@ print(f"Step 6 — BEVFusion cars: median width={bev_cars['box_width'].median():
 print(f"         Others  cars: median width={other_cars['box_width'].median():.2f} m, "
       f"length={other_cars['box_length'].median():.2f} m")
 
-# Step 7: Clip extreme distance values
+# Step 7: Clip extreme distance values.
+# 3x the 99th percentile is a generous outlier cap (not the p99 itself) so
+# only genuinely extreme values are clipped, not the top 1% of otherwise
+# legitimate long-range detections.
 p99 = df["dist_from_ego"].quantile(0.99)
 cap = 3 * p99
 n_clipped = (df["dist_from_ego"] > cap).sum()
@@ -207,6 +210,8 @@ print("  Saved fig4_feature_distributions.png")
 
 # ── Figure 5: correlation heatmap ────────────────────────────────────────────
 corr = df_tr[FEATURE_COLS].corr()
+# Mask out the upper triangle (a correlation matrix is symmetric, so it
+# would only duplicate the lower triangle's values).
 mask = np.triu(np.ones_like(corr, dtype=bool), k=1)
 fig, ax = plt.subplots(figsize=(11, 9))
 sns.heatmap(corr, mask=mask, annot=True, fmt=".2f", cmap="RdBu_r",
@@ -239,6 +244,9 @@ plt.close()
 print("  Saved fig6_tp_rate_heatmap.png")
 
 # ── Figure 7: box geometry scatter ───────────────────────────────────────────
+# Subsample: a scatter of the full multi-million-row training set would be
+# unreadable (overplotted) and slow to render; 60k points is enough to see
+# each class's shape distribution.
 sample = df_tr.sample(n=min(60_000, len(df_tr)), random_state=42)
 fig, ax = plt.subplots(figsize=(9, 6))
 palette = sns.color_palette("tab10", n_colors=10)

@@ -39,6 +39,10 @@ FONT_SCALE = 1.15
 
 
 def box(ax, cx, cy, w, h, text, color, fontsize=7.5, text_color="white"):
+    """Draw one rounded, filled step box centered at (cx, cy) with a label.
+
+    Returns (bottom_y, top_y) so callers can chain an arrow off either edge.
+    """
     ax.add_patch(
         FancyBboxPatch(
             (cx - w / 2, cy - h / 2), w, h,
@@ -52,6 +56,7 @@ def box(ax, cx, cy, w, h, text, color, fontsize=7.5, text_color="white"):
 
 
 def arrow(ax, x0, y0, x1, y1, color="#44464a"):
+    """Draw one straight arrow between two points, used to connect step boxes."""
     ax.add_patch(
         FancyArrowPatch(
             (x0, y0), (x1, y1), arrowstyle="-|>", mutation_scale=7,
@@ -86,6 +91,8 @@ def fan_in(ax, y_from, y_to):
 
 
 def panel(ax, title, facecolor, edgecolor):
+    """Set up one titled panel (fitting or labeling) as a normalized 0-1
+    coordinate canvas with a rounded border and colored title text."""
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
@@ -101,6 +108,8 @@ def panel(ax, title, facecolor, edgecolor):
 
 
 def draw_fitting(ax):
+    """Draw the left panel: the one-time, offline router-fitting flow (pool
+    experts' boxes -> label vs. GT -> extract features -> train routers)."""
     panel(ax, "ROUTER FITTING  —  once, offline", "#eef3fa", "#1f5fa8")
 
     bottom = expert_row(ax, 0.875)
@@ -136,6 +145,8 @@ def draw_fitting(ax):
 
 
 def draw_labeling(ax):
+    """Draw the right panel: the per-scene, offline inference flow (score
+    with the trained routers -> gate -> NMS -> temporal refinement)."""
     panel(ax, "LABELING  —  per scene, offline", "#eefaf1", "#1d7a45")
 
     b, _ = box(ax, 0.5, 0.905, 0.46, 0.050, "Unlabeled LiDAR scene", NEUTRAL)
@@ -171,6 +182,7 @@ def draw_labeling(ax):
 
 
 def main() -> None:
+    """Render both panels side by side and save fig9_architecture.png."""
     fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.9))
     draw_fitting(axes[0])
     draw_labeling(axes[1])

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# The 10 nuScenes detection classes that every expert's output and every
+# router is defined over. Order is not semantically meaningful here (a set),
+# but downstream per-class artifacts (routers, thresholds, blend weights)
+# are always keyed by these exact strings.
 NUSCENES_CLASSES: frozenset[str] = frozenset(
     [
         "car",

@@ -82,6 +82,10 @@ def get_scene_ordered_tokens(nusc, token_set: set[str]) -> list[list[str]]:
 
 
 class _Track:
+    """Mutable, in-progress track state during a single class's pass over a
+    scene (internal to track_scene; TrackInfo is the public, frozen
+    per-box result)."""
+
     __slots__ = ("track_id", "last_pos", "last_frame_idx", "misses", "hit_count")
 
     def __init__(self, track_id: int, pos: tuple[float, float], frame_idx: int) -> None:
@@ -112,6 +116,10 @@ def _greedy_match(
                 pairs.append((dist, ti, di))
     pairs.sort(key=lambda p: p[0])
 
+    # Greedily consume the globally closest pairs first: once a track or
+    # detection is claimed it's skipped for the rest of the pass, so each
+    # track ends up matched to its nearest still-available detection
+    # rather than the nearest detection overall.
     matched_tracks: set[int] = set()
     matched_dets: set[int] = set()
     track_to_det: dict[int, int] = {}
@@ -172,6 +180,11 @@ def track_scene(
 
             track_to_det, matched_dets = _greedy_match(active, cls_dets, max_dist)
 
+            # Update every currently active track: matched tracks advance
+            # to the new detection's position and reset their miss streak;
+            # unmatched tracks accrue a miss and are dropped once they
+            # exceed max_misses (retired tracks simply aren't carried into
+            # `still_active`, so later frames can no longer match them).
             still_active: list[_Track] = []
             for ti, t in enumerate(active):
                 if ti in track_to_det:
@@ -190,6 +203,9 @@ def track_scene(
                         still_active.append(t)
             active = still_active
 
+            # Any detection this frame that didn't match an existing track
+            # starts a brand-new one (hit_count=1 until/unless a later
+            # frame extends it).
             for di, d in enumerate(cls_dets):
                 if di in matched_dets:
                     continue

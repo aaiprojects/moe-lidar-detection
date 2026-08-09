@@ -150,6 +150,9 @@ def apply_temporal_refinement(
     combined: dict[str, list[DetectionBox]] = {}
     for token, orig_boxes in orig_boxes_by_token.items():
         n_orig = len(orig_boxes)
+        # interpolate_missed_frames returns each token's original boxes
+        # unchanged followed by any new interpolated insertions, so
+        # slicing past n_orig isolates just the newly synthesized boxes.
         new_interp_boxes = interpolated[token][n_orig:]
 
         kept = []

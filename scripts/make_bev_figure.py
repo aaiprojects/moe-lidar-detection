@@ -80,10 +80,12 @@ def matched_set(preds: list[dict], gts: list[dict]) -> set[int]:
 
 
 def recovered(preds: list[dict], gts: list[dict]) -> int:
+    """Count of ground-truth objects recovered by these predictions."""
     return len(matched_set(preds, gts))
 
 
 def draw(ax, points, preds, gts, title):
+    """Draw one panel: LiDAR points, dashed GT boxes, solid prediction boxes."""
     ax.scatter(points[:, 0], points[:, 1], s=0.12, c="#8e979f", alpha=0.75,
                linewidths=0, rasterized=True)
     for g in gts:
@@ -100,6 +102,7 @@ def draw(ax, points, preds, gts, title):
 
 
 def _rect(ax, b, colour, lw, ls):
+    """Draw one box dict (ego-frame x/y/yaw/w/l) as a rotated rectangle outline."""
     w, l = b["w"], b["l"]
     corners = np.array([[l / 2, w / 2], [-l / 2, w / 2], [-l / 2, -w / 2], [l / 2, -w / 2]])
     c, s = np.cos(b["yaw"]), np.sin(b["yaw"])
@@ -109,6 +112,8 @@ def _rect(ax, b, colour, lw, ls):
 
 
 def main() -> None:
+    """Pick the densest held-out keyframe in TARGET_SCENE and render the
+    six-panel per-expert-vs-fused BEV comparison figure."""
     from nuscenes import NuScenes
 
     split = json.loads((REPO / "training_data" / "token_split_3way.json").read_text())
@@ -228,6 +233,8 @@ def main() -> None:
 
 
 def _nusc_to_det(category: str) -> str | None:
+    """Map a raw nuScenes annotation category to a detection class name,
+    or None if this category has no detection-eval counterpart."""
     mapping = {
         "vehicle.car": "car", "vehicle.truck": "truck", "vehicle.bus.rigid": "bus",
         "vehicle.bus.bendy": "bus", "vehicle.trailer": "trailer",

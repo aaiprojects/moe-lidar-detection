@@ -34,6 +34,7 @@ def _make_submission(n_samples: int = 3, boxes_per_sample: int = 2) -> dict:
 
 
 def test_load_returns_correct_sample_count():
+    """Every sample token and its full box count is loaded from the submission JSON."""
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
         json.dump(_make_submission(n_samples=5, boxes_per_sample=3), f)
         path = Path(f.name)
@@ -45,6 +46,7 @@ def test_load_returns_correct_sample_count():
 
 
 def test_load_assigns_model_name():
+    """Every loaded DetectionBox gets the model_name passed to the loader."""
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
         json.dump(_make_submission(), f)
         path = Path(f.name)
@@ -56,6 +58,7 @@ def test_load_assigns_model_name():
 
 
 def test_load_score_threshold_filters():
+    """A box scoring below score_threshold is dropped during loading."""
     submission = _make_submission()
     # Lower one box's score below threshold
     token = list(submission["results"].keys())[0]
@@ -71,11 +74,13 @@ def test_load_score_threshold_filters():
 
 
 def test_load_missing_file_raises():
+    """Loading a nonexistent path raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match="not found"):
         load_nuscenes_predictions(Path("/nonexistent/path.json"), model_name="m")
 
 
 def test_load_missing_results_key_raises():
+    """A JSON file without a top-level 'results' key is rejected as malformed."""
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
         json.dump({"meta": {}}, f)
         path = Path(f.name)
@@ -85,6 +90,7 @@ def test_load_missing_results_key_raises():
 
 
 def test_round_trip_preserves_box_count():
+    """load -> save round-trips every sample token and its box count unchanged."""
     submission = _make_submission(n_samples=4, boxes_per_sample=5)
 
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
@@ -106,6 +112,7 @@ def test_round_trip_preserves_box_count():
 
 
 def test_save_creates_parent_dirs():
+    """save_nuscenes_predictions creates any missing parent directories."""
     submission = _make_submission(n_samples=1)
 
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
@@ -121,6 +128,7 @@ def test_save_creates_parent_dirs():
 
 
 def test_saved_json_has_meta_and_results_keys():
+    """The saved submission JSON has both a 'meta' and a 'results' top-level key."""
     submission = _make_submission(n_samples=2)
 
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
