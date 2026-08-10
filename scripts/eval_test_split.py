@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+# Make the repo root importable (for `from src...`) when this file is run
+# directly as a script rather than via `python -m` from the repo root.
 sys.path.insert(0, str(REPO))
 
 from nuscenes import NuScenes  # noqa: E402
@@ -35,6 +37,8 @@ SUBMISSIONS = {
 
 
 def main() -> None:
+    """Evaluate the fused MoE submission and each standalone expert on the
+    held-out test split, writing one result JSON per model as it finishes."""
     if not NUSCENES_ROOT.exists():
         raise SystemExit(
             f"nuScenes dataset not found at {NUSCENES_ROOT}.\n"

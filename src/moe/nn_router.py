@@ -281,6 +281,7 @@ class NNRouterWrapper:
         return np.column_stack([1.0 - p_pos, p_pos])
 
     def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
+        """Return hard 0/1 labels by thresholding predict_proba's TP column."""
         return (self.predict_proba(X)[:, 1] >= threshold).astype(int)
 
     def __setstate__(self, state: dict) -> None:

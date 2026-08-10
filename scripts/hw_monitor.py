@@ -145,6 +145,7 @@ def read_top_process() -> tuple[float | None, str | None]:
 
 
 def build_row(event: str = "sample", label: str = "") -> dict:
+    """Assemble one FIELDNAMES-shaped row from a fresh read of every sensor."""
     mem = read_meminfo()
     gpu = read_gpu(shutil.which("nvidia-smi"))
     rss, name = read_top_process()
@@ -189,6 +190,12 @@ def mark(label: str, log_path: Path = DEFAULT_LOG) -> None:
 
 
 def summarize(log_path: Path, tail: int = 25) -> int:
+    """Print peak values and the final rows of an existing log (--summary).
+
+    Meant to be read after a crash: the peaks flag which resource was
+    trending toward exhaustion, and the tail shows the state right before
+    the log stopped being appended to.
+    """
     if not log_path.exists():
         print(f"No log at {log_path}", file=sys.stderr)
         return 1
@@ -218,6 +225,8 @@ def summarize(log_path: Path, tail: int = 25) -> int:
 
 
 def main() -> int:
+    """CLI entry point: run as a continuous sampler, or handle --summary/--mark
+    and exit immediately."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interval", type=float, default=2.0, help="seconds between samples")
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG)

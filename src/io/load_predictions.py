@@ -73,6 +73,10 @@ def load_nuscenes_predictions(
         )
 
     raw_results = data["results"]
+    # A full-val prediction file is hundreds of MB on disk; explicitly drop
+    # the parsed-JSON dict once its 'results' payload is extracted so peak
+    # memory doesn't briefly hold both the raw dict and the DetectionBox
+    # objects being built from it.
     del data
     gc.collect()
 
@@ -130,6 +134,11 @@ def load_nuscenes_predictions(
 
 
 def _check_required_fields(raw: dict, sample_token: str, path: Path) -> None:
+    """Raise ValueError naming any REQUIRED_BOX_FIELDS missing from a raw box dict.
+
+    Checked before constructing DetectionBox so a malformed box is reported
+    with its sample token and source file, not a bare KeyError.
+    """
     missing = [f for f in REQUIRED_BOX_FIELDS if f not in raw]
     if missing:
         raise ValueError(

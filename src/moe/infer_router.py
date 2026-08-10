@@ -33,6 +33,8 @@ log = get_logger(__name__)
 
 
 def _sigmoid(x: float) -> float:
+    """Standard logistic function, used to turn router_proba/tau into the
+    soft-temperature blend weight w (see module docstring)."""
     return 1.0 / (1.0 + math.exp(-x))
 
 

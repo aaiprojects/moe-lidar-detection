@@ -22,6 +22,16 @@ VALID_FRAMES: frozenset[str] = frozenset(["global", "lidar", "ego"])
 
 @dataclass
 class DetectionBox:
+    """The common internal representation every expert's output is normalized
+    into before fusion.
+
+    Every expert loaded via src/io/load_predictions.py, every router feature
+    in src/moe/features.py, and every fusion step in src/fusion/ operates on
+    lists of DetectionBox, never on the experts' raw, model-specific JSON
+    formats. __post_init__ validates the fields and derives `yaw` from
+    `rotation`, so any DetectionBox that exists is already known-valid.
+    """
+
     sample_token: str
     model_name: str
     translation: list[float]          # [x, y, z]
@@ -39,6 +49,11 @@ class DetectionBox:
         self.yaw = _quat_to_yaw(self.rotation)
 
     def _validate(self) -> None:
+        """Raise ValueError on any malformed or out-of-range field.
+
+        Runs once at construction time (from __post_init__), so a
+        DetectionBox that exists downstream never needs re-checking.
+        """
         if not self.sample_token:
             raise ValueError("sample_token must not be empty")
         if not self.model_name:

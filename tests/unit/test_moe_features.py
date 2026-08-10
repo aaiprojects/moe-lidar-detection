@@ -23,6 +23,7 @@ def make_box(
     vx: float = 0.0,
     vy: float = 0.0,
 ) -> DetectionBox:
+    """Build a DetectionBox at (x, y) with the given score/class/model/velocity."""
     return DetectionBox(
         sample_token="tok",
         model_name=model,
@@ -49,6 +50,7 @@ def _feats(box, peers=None, n_active=1, n_other=0, max_cls=None):
 
 
 def test_feature_names_length():
+    """FEATURE_NAMES has exactly the 17 production features, no removed/excluded ones."""
     # Original 15 + n_spatial_overlaps + class_agreement + dist_to_drivable_area,
     # minus class_id (excluded: constant within each per-class router's training
     # data, so it carries zero split information -- see features.py comment).
@@ -61,6 +63,8 @@ def test_feature_names_length():
 
 
 def test_features_no_peers():
+    """A box with no peers gets zeroed presence/uncertainty features and the
+    class_agreement missing sentinel (not 0.0)."""
     box = make_box(10.0, 5.0, score=0.8, model="centerpoint")
     feats = _feats(box)
 
@@ -94,6 +98,7 @@ def test_isolated_vs_disagreement_not_conflated():
 
 
 def test_features_with_overlapping_peer():
+    """One fully-overlapping, same-class peer drives presence and agreement to 1.0."""
     box = make_box(0.0, 0.0, score=0.9, model="centerpoint")
     peer = make_box(0.0, 0.0, score=0.7, model="pointpillars")
     feats = _feats(box, peers=[peer], n_active=2, n_other=1, max_cls=0.9)
@@ -137,6 +142,7 @@ def test_class_agreement_partial_confusion():
 
 
 def test_score_variance_two_peers():
+    """score_variance matches the hand-computed population variance of two peer scores."""
     box = make_box(0.0, 0.0, score=0.9, model="centerpoint")
     peer1 = make_box(0.0, 0.0, score=0.8, model="pointpillars")
     peer2 = make_box(0.0, 0.0, score=0.4, model="voxelnext")
@@ -150,6 +156,7 @@ def test_score_variance_two_peers():
 
 
 def test_expert_agreement_partial():
+    """expert_agreement is the fraction of OTHER experts with an overlapping box."""
     # Two other experts, only one has an overlapping box
     box = make_box(0.0, 0.0, score=0.9, model="centerpoint")
     peer_close = make_box(0.0, 0.0, score=0.8, model="pointpillars")
@@ -160,6 +167,7 @@ def test_expert_agreement_partial():
 
 
 def test_expert_agreement_none():
+    """expert_agreement is 0.0 when no other expert has an overlapping box."""
     box = make_box(0.0, 0.0, model="centerpoint")
     peer = make_box(100.0, 100.0, model="pointpillars")
     feats = _feats(box, peers=[peer], n_active=2, n_other=1, max_cls=0.9)
@@ -167,12 +175,14 @@ def test_expert_agreement_none():
 
 
 def test_max_class_score_stored():
+    """max_class_score is passed through from the caller-supplied value, not recomputed."""
     box = make_box(0.0, 0.0, score=0.6)
     feats = _feats(box, max_cls=0.95)
     assert math.isclose(feats.max_class_score, 0.95)
 
 
 def test_features_with_non_overlapping_peer():
+    """A peer far enough away contributes no overlap and no IoU."""
     box = make_box(0.0, 0.0, model="centerpoint")
     peer = make_box(100.0, 100.0, model="pointpillars")
     feats = _feats(box, peers=[peer], n_active=2, n_other=1)
@@ -182,18 +192,21 @@ def test_features_with_non_overlapping_peer():
 
 
 def test_velocity_magnitude():
+    """vel_magnitude is the Euclidean norm of (vx, vy) — a 3-4-5 triangle here."""
     box = make_box(0.0, 0.0, vx=3.0, vy=4.0)
     feats = _feats(box)
     assert math.isclose(feats.vel_magnitude, 5.0)
 
 
 def test_to_list_length_matches_feature_names():
+    """to_list() emits exactly one value per entry in FEATURE_NAMES."""
     box = make_box(1.0, 2.0)
     feats = _feats(box)
     assert len(feats.to_list()) == len(FEATURE_NAMES)
 
 
 def test_extract_features_for_sample_two_experts():
+    """Two experts each contributing an overlapping box see each other as peers."""
     boxes_cp = [make_box(0.0, 0.0, model="centerpoint")]
     boxes_pp = [make_box(0.5, 0.0, model="pointpillars")]
 
@@ -214,6 +227,7 @@ def test_extract_features_for_sample_two_experts():
 
 
 def test_n_active_experts_counted():
+    """An expert contributing an empty box list doesn't count as active."""
     result = extract_features_for_sample({
         "centerpoint": [make_box(0.0, 0.0, model="centerpoint")],
         "pointpillars": [make_box(0.0, 0.0, model="pointpillars")],
@@ -223,30 +237,35 @@ def test_n_active_experts_counted():
 
 
 def test_pointpillars_expert_id():
+    """pointpillars maps to expert_id 1, per _EXPERT_TO_ID."""
     box = make_box(0.0, 0.0, model="pointpillars")
     feats = _feats(box)
     assert feats.expert_id == 1
 
 
 def test_centerpoint_pillar_expert_id():
+    """centerpoint_pillar maps to expert_id 2, per _EXPERT_TO_ID."""
     box = make_box(0.0, 0.0, model="centerpoint_pillar")
     feats = _feats(box)
     assert feats.expert_id == 2
 
 
 def test_ssn_expert_id():
+    """ssn maps to expert_id 3, per _EXPERT_TO_ID."""
     box = make_box(0.0, 0.0, model="ssn")
     feats = _feats(box)
     assert feats.expert_id == 3
 
 
 def test_bevfusion_lidar_expert_id():
+    """bevfusion_lidar maps to expert_id 6, per _EXPERT_TO_ID."""
     box = make_box(0.0, 0.0, model="bevfusion_lidar")
     feats = _feats(box)
     assert feats.expert_id == 6
 
 
 def test_unknown_expert_gets_fallback_id():
+    """A model name absent from _EXPERT_TO_ID gets a fallback id past the known range."""
     box = make_box(0.0, 0.0, model="some_new_model")
     feats = _feats(box)
     assert feats.expert_id >= 7
@@ -269,18 +288,21 @@ class _FakeMask:
 
 
 def test_extract_features_missing_mask_gives_sentinel():
+    """With mask=None, every box gets the DIST_TO_DRIVABLE_AREA_MISSING sentinel."""
     box = make_box(0.0, 0.0)
     feats = extract_features_for_sample({"centerpoint": [box]}, mask=None)
     assert feats["centerpoint"][0].dist_to_drivable_area == DIST_TO_DRIVABLE_AREA_MISSING
 
 
 def test_extract_features_on_drivable_area_is_zero():
+    """A box already on the mask gets distance 0.0."""
     box = make_box(0.0, 0.0)  # inside the fake mask's radius=5 disk
     feats = extract_features_for_sample({"centerpoint": [box]}, mask=_FakeMask(radius=5.0))
     assert feats["centerpoint"][0].dist_to_drivable_area == 0.0
 
 
 def test_extract_features_off_drivable_area_positive_distance():
+    """A box off the mask snaps to the smallest dilation level that covers the true gap."""
     box = make_box(10.0, 0.0)  # 10m out, outside radius=5 disk
     feats = extract_features_for_sample({"centerpoint": [box]}, mask=_FakeMask(radius=5.0))
     dist = feats["centerpoint"][0].dist_to_drivable_area
@@ -290,12 +312,14 @@ def test_extract_features_off_drivable_area_positive_distance():
 
 
 def test_extract_features_far_off_road_capped():
+    """A box far beyond every dilation level is capped at _DRIVABLE_AREA_OFF_ROAD_CAP_M."""
     box = make_box(1000.0, 0.0)
     feats = extract_features_for_sample({"centerpoint": [box]}, mask=_FakeMask(radius=5.0))
     assert feats["centerpoint"][0].dist_to_drivable_area == 16.0
 
 
 def test_dist_to_drivable_area_batch_matches_per_box():
+    """The batched vectorized distance computation agrees with per-box expectations."""
     boxes = [make_box(0.0, 0.0), make_box(10.0, 0.0), make_box(1000.0, 0.0)]
     feats = extract_features_for_sample({"centerpoint": boxes}, mask=_FakeMask(radius=5.0))
     dists = [f.dist_to_drivable_area for f in feats["centerpoint"]]

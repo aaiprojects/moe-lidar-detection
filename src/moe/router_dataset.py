@@ -481,6 +481,10 @@ def build_dataset(
         for args in tqdm(task_args, desc="Building dataset", unit="token"):
             all_rows.extend(_process_token(args))
     else:
+        # "fork" (not the platform default on some systems) is required so
+        # workers inherit _MASK_BY_TOKEN via copy-on-write instead of each
+        # having it re-pickled through the task queue -- see that global's
+        # docstring above.
         ctx = mp.get_context("fork")
         with ctx.Pool(processes=effective_workers) as pool:
             for rows in tqdm(

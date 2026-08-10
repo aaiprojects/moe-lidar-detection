@@ -80,6 +80,10 @@ from src.utils.logging_utils import get_logger
 log = get_logger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
+# A list (not src.utils.class_mapping.NUSCENES_CLASSES, which is an
+# unordered frozenset): training and loading iterate this in order, so a
+# stable, deterministic order is needed here even though set membership
+# would suffice for validation elsewhere.
 NUSCENES_CLASSES: list[str] = [
     "car", "truck", "construction_vehicle", "bus", "trailer",
     "barrier", "motorcycle", "bicycle", "pedestrian", "traffic_cone",

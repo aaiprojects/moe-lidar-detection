@@ -125,6 +125,12 @@ def _evaluate_on_sample_tokens(
 
         for metric_name in TP_METRICS:
             metric_data = metric_data_list[(class_name, eval_config.dist_th_tp)]
+            # Matches the official devkit's own exclusions: traffic cones
+            # have no meaningful orientation/velocity/attribute labels in
+            # nuScenes (they're static and rotationally symmetric), and
+            # barriers have no attribute or velocity labels either. These
+            # error types are undefined for these classes, not merely hard
+            # to estimate, so they're reported as NaN rather than computed.
             if class_name in ["traffic_cone"] and metric_name in [
                 "attr_err",
                 "vel_err",

@@ -7,6 +7,7 @@ _Q = [1.0, 0.0, 0.0, 0.0]
 
 
 def make_box(x: float, y: float, score: float, cls: str = "car") -> DetectionBox:
+    """Build a DetectionBox at (x, y) with the given score and class."""
     return DetectionBox(
         sample_token="tok",
         model_name="m",
@@ -22,6 +23,7 @@ def make_box(x: float, y: float, score: float, cls: str = "car") -> DetectionBox
 
 
 def test_single_frame_scene_all_orphans():
+    """With only one frame, every box starts its own track with hit_count=1."""
     frames = [("t0", [make_box(0.0, 0.0, 0.9), make_box(50.0, 0.0, 0.8)])]
     result = track_scene(frames)
     infos = result["t0"]
@@ -31,6 +33,8 @@ def test_single_frame_scene_all_orphans():
 
 
 def test_stationary_object_tracked_across_frames():
+    """A near-stationary object stays under one track_id across 3 frames,
+    accumulating hit_count=3."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.9)]),
         ("t1", [make_box(0.2, 0.1, 0.85)]),
@@ -43,6 +47,7 @@ def test_stationary_object_tracked_across_frames():
 
 
 def test_far_apart_detections_form_separate_tracks():
+    """Two detections beyond the per-class distance gate never join the same track."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.9)]),
         ("t1", [make_box(100.0, 0.0, 0.9)]),
@@ -54,6 +59,8 @@ def test_far_apart_detections_form_separate_tracks():
 
 
 def test_different_classes_never_share_a_track():
+    """Tracking runs per-class internally, so a car and a pedestrian at
+    nearly the same spot are never assigned to the same track."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.9, cls="car")]),
         ("t1", [make_box(0.1, 0.0, 0.9, cls="pedestrian")]),
@@ -65,6 +72,7 @@ def test_different_classes_never_share_a_track():
 
 
 def test_missed_frame_still_reconnects_within_max_misses():
+    """A track survives one missed frame (default max_misses=1) and reconnects."""
     # object present at t0 and t2, absent at t1 (occlusion) -- should still
     # be one track since max_misses defaults to 1.
     frames = [
@@ -78,6 +86,8 @@ def test_missed_frame_still_reconnects_within_max_misses():
 
 
 def test_two_close_objects_each_get_own_track():
+    """Two distinct objects each keep their own track_id across frames,
+    even when both are moving and both are within the association gate."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.9), make_box(20.0, 0.0, 0.8)]),
         ("t1", [make_box(0.1, 0.0, 0.9), make_box(20.1, 0.0, 0.8)]),
@@ -90,6 +100,8 @@ def test_two_close_objects_each_get_own_track():
 
 
 def test_rescoring_penalises_orphans_and_boosts_multi_hit():
+    """apply_track_rescoring lowers a single-hit orphan's score and raises a
+    multi-hit track's score, for every box that track touches."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.6), make_box(50.0, 0.0, 0.6)]),
         ("t1", [make_box(0.1, 0.0, 0.6)]),
@@ -107,6 +119,7 @@ def test_rescoring_penalises_orphans_and_boosts_multi_hit():
 
 
 def test_rescoring_clips_score_to_valid_range():
+    """An orphan_penalty > 1.0 that would push the score above 1.0 is clipped to [0, 1]."""
     frames = [("t0", [make_box(0.0, 0.0, 0.95)])]
     track_info = track_scene(frames)
     rescored = apply_track_rescoring(frames, track_info, multi_hit_boost=1.0, orphan_penalty=3.0)
@@ -116,6 +129,9 @@ def test_rescoring_clips_score_to_valid_range():
 # --- interpolate_missed_frames --------------------------------------------
 
 def test_interpolates_single_frame_gap():
+    """A one-frame gap between two hits of the same track gets a midpoint
+    box synthesized at the missed frame, scored at min(neighbor scores) *
+    score_discount."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8)]),
         ("t1", []),  # missed
@@ -134,6 +150,7 @@ def test_interpolates_single_frame_gap():
 
 
 def test_no_interpolation_when_no_gap():
+    """Consecutive real hits with no gap between them get no interpolated boxes."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8)]),
         ("t1", [make_box(0.2, 0.0, 0.8)]),
@@ -145,6 +162,7 @@ def test_no_interpolation_when_no_gap():
 
 
 def test_no_interpolation_for_orphan_single_frame_track():
+    """A track with only one hit has no gap to bridge, so output equals input unchanged."""
     frames = [("t0", [make_box(0.0, 0.0, 0.9)])]
     track_info = track_scene(frames)
     result = interpolate_missed_frames(frames, track_info)
@@ -152,6 +170,7 @@ def test_no_interpolation_for_orphan_single_frame_track():
 
 
 def test_no_interpolation_for_gap_larger_than_one_frame():
+    """A two-frame gap is NOT bridged (only exactly-one-frame gaps qualify)."""
     # track dies after 1 miss (default max_misses=1), so a 2-frame gap
     # produces two SEPARATE tracks, not one bridgeable track -- no
     # interpolation should be inserted for the middle frames.
@@ -168,6 +187,8 @@ def test_no_interpolation_for_gap_larger_than_one_frame():
 
 
 def test_interpolated_box_preserves_class_and_uses_midpoint_size():
+    """An interpolated box keeps the track's class and gets the midpoint of
+    its two neighbors' sizes (here, identical sizes on both sides)."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8, cls="pedestrian")]),
         ("t1", []),
@@ -181,6 +202,8 @@ def test_interpolated_box_preserves_class_and_uses_midpoint_size():
 
 
 def test_original_boxes_unaffected_by_interpolation():
+    """interpolate_missed_frames only appends new boxes; it never mutates
+    the scores of the original real detections."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8)]),
         ("t1", []),
@@ -202,6 +225,8 @@ def test_original_boxes_unaffected_by_interpolation():
 # replicating the exact fragmentation mechanics of the greedy tracker.
 
 def test_interpolation_skipped_when_it_would_duplicate_existing_box():
+    """An interpolation candidate is dropped when it would overlap a
+    same-class box a different track already placed in that frame."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8)]),      # track 1, hit 1
         ("t1", [make_box(1.0, 0.0, 0.5)]),      # track 2 (different object/track), sits
@@ -221,6 +246,8 @@ def test_interpolation_skipped_when_it_would_duplicate_existing_box():
 
 
 def test_interpolation_still_happens_when_existing_box_is_far_away():
+    """A same-class box in the gap frame that's spatially far from the
+    interpolation candidate does NOT block the interpolation."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8)]),
         ("t1", [make_box(20.0, 0.0, 0.5)]),  # same class, but nowhere near the gap midpoint
@@ -239,6 +266,8 @@ def test_interpolation_still_happens_when_existing_box_is_far_away():
 
 
 def test_interpolation_still_happens_when_existing_box_is_different_class():
+    """A different-class box occupying the same spot in the gap frame does
+    NOT block the interpolation (dedup is same-class only)."""
     frames = [
         ("t0", [make_box(0.0, 0.0, 0.8, cls="car")]),
         ("t1", [make_box(1.0, 0.0, 0.5, cls="pedestrian")]),  # same spot, different class

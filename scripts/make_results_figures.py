@@ -87,6 +87,8 @@ BEVFUSION_MAP = 0.6009
 
 
 def load() -> tuple[dict, dict]:
+    """Load the per-expert and fused-system test-split metric JSONs,
+    failing fast with a pointer to eval_test_split.py if either is missing."""
     for label, path in (("expert", EXPERT_METRICS), ("fused-system", MOE_METRICS)):
         if not path.exists():
             raise SystemExit(
@@ -99,6 +101,8 @@ def load() -> tuple[dict, dict]:
 
 
 def print_tables(experts: dict, moe: dict) -> None:
+    """Print the system-level metrics table and the per-class fused-vs-best-expert
+    comparison table (the raw numbers behind fig_per_class)."""
     cols = ["mAP", "NDS", "mATE", "mASE", "mAOE", "mAVE", "mAAE"]
     print("\n=== TABLE 5.3  system-level metrics, 45 held-out test scenes ===")
     print(f"{'System':<22}" + "".join(f"{c:>9}" for c in cols))
@@ -208,6 +212,7 @@ def fig_recovery() -> None:
 
 
 def main() -> None:
+    """Load metrics, print the results tables, and write all three results figures."""
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     experts, moe = load()
     print_tables(experts, moe)

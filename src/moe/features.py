@@ -153,6 +153,10 @@ PEER_IOU_THRESHOLD: float = 0.1
 
 @dataclass
 class BoxFeatures:
+    """One candidate box's full feature record: the router model inputs
+    (see to_list(), FEATURE_NAMES) plus class_id, which is carried as row
+    metadata for per-class filtering but is not itself a model input."""
+
     expert_id: int
     class_id: int
     detection_score: float
@@ -354,6 +358,10 @@ def extract_features_for_sample(
 
     # One batched map query across every box in the sample (all models),
     # instead of per-box calls -- mirrors bev_iou_matrix's vectorization.
+    # Keyed by id(box) rather than a box field: DetectionBox has no unique
+    # identifier of its own, and every box here is a distinct live object
+    # held in expert_boxes/all_boxes for the rest of this function's scope,
+    # so id() is a safe, cheap per-object key for this one lookup.
     drivable_dist_by_id: dict[int, float] = {}
     if mask is not None:
         all_boxes = [b for boxes in expert_boxes.values() for b in boxes]
@@ -365,6 +373,9 @@ def extract_features_for_sample(
 
     result: dict[str, list[BoxFeatures]] = {}
     for model_name, boxes in expert_boxes.items():
+        # "Peers" for this expert's boxes are every OTHER expert's boxes in
+        # this sample -- a box never counts itself or its own expert's
+        # other boxes as corroborating evidence.
         peer_boxes: list[DetectionBox] = []
         for other_name, other_boxes in expert_boxes.items():
             if other_name != model_name:
